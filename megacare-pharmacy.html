@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MegaCare Pharmacy — Management System</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#F0F4F8; font-family:'Inter', sans-serif; color:#1A2B3C; }
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#f0f4f8; }
+  ::-webkit-scrollbar-thumb { background:#B0C4D8; border-radius:10px; }
+  input, select, button, textarea { font-family:'Inter', sans-serif; }
+  input:focus, select:focus { outline:2px solid #0066CC; outline-offset:1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+const STORAGE_KEY = "megacare_medicines_v2";
+
+const defaultMedicines = [
+  { id:1, nameCN:"扑热息痛", nameEN:"Panadol", category:"退烧药 Fever", location:"A1", price:"RM 5.00", description:"退烧止痛 / Fever & Pain Relief" },
+  { id:2, nameCN:"布洛芬", nameEN:"Ibuprofen", category:"退烧药 Fever", location:"A1", price:"RM 8.00", description:"退烧消炎 / Anti-inflammatory" },
+  { id:3, nameCN:"氯苯那敏", nameEN:"Chlorphenamine", category:"感冒药 Cold", location:"A2", price:"RM 4.50", description:"过敏鼻炎 / Allergy & Runny Nose" },
+  { id:4, nameCN:"右美沙芬", nameEN:"Dextromethorphan", category:"感冒药 Cold", location:"A2", price:"RM 6.00", description:"止咳 / Cough Relief" },
+  { id:5, nameCN:"氢氧化铝", nameEN:"Antacid", category:"肠胃药 Digestive", location:"B1", price:"RM 7.00", description:"胃酸 / Acid Reflux" },
+  { id:6, nameCN:"黄连素", nameEN:"Berberine", category:"肠胃药 Digestive", location:"B1", price:"RM 5.50", description:"腹泻 / Diarrhea" },
+  { id:7, nameCN:"维生素C", nameEN:"Vitamin C", category:"保健品 Supplements", location:"C1", price:"RM 12.00", description:"免疫力 / Immunity Boost" },
+  { id:8, nameCN:"鱼油", nameEN:"Fish Oil", category:"保健品 Supplements", location:"C2", price:"RM 25.00", description:"心脏健康 / Heart Health" },
+  { id:9, nameCN:"阿莫西林", nameEN:"Amoxicillin", category:"抗生素 Antibiotics", location:"D1", price:"RM 15.00", description:"细菌感染 / Bacterial Infection" },
+  { id:10, nameCN:"氯雷他定", nameEN:"Loratadine", category:"过敏药 Allergy", location:"E1", price:"RM 9.00", description:"过敏反应 / Allergic Reaction" },
+];
+
+const categoryConfig = {
+  "退烧药 Fever":       { bg:"#FFF0F0", light:"#FFDEDE", accent:"#C62828", icon:"🌡️", en:"Fever" },
+  "感冒药 Cold":        { bg:"#EFF6FF", light:"#DBEAFE", accent:"#1565C0", icon:"🤧", en:"Cold" },
+  "肠胃药 Digestive":   { bg:"#F0FDF4", light:"#DCFCE7", accent:"#1B5E20", icon:"💊", en:"Digestive" },
+  "保健品 Supplements": { bg:"#FFFBEB", light:"#FEF3C7", accent:"#B45309", icon:"⭐", en:"Supplements" },
+  "抗生素 Antibiotics": { bg:"#F5F0FF", light:"#EDE9FE", accent:"#5B21B6", icon:"🔬", en:"Antibiotics" },
+  "过敏药 Allergy":     { bg:"#FFF0F9", light:"#FCE7F3", accent:"#9D174D", icon:"🌿", en:"Allergy" },
+};
+const CAT_STORAGE_KEY = "megacare_categories_v1";
+
+function loadCats() {
+  try { const s = localStorage.getItem(CAT_STORAGE_KEY); return s ? JSON.parse(s) : {...categoryConfig}; }
+  catch { return {...categoryConfig}; }
+}
+
+const allCategories = Object.keys(categoryConfig);
+
+function load() {
+  try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : defaultMedicines; }
+  catch { return defaultMedicines; }
+}
+
+function App() {
+  const [medicines, setMedRaw] = useState(load);
+  const [tab, setTab] = useState("search");
+  const [search, setSearch] = useState("");
+  const [filterCat, setFilterCat] = useState("全部 All");
+  const [selLoc, setSelLoc] = useState(null);
+  const [cats, setCatsRaw] = useState(loadCats);
+  const [catForm, setCatForm] = useState({ key:"", icon:"💊", bg:"#F0F4FF", light:"#DBEAFE", accent:"#1565C0" });
+  const [catOk, setCatOk] = useState(false);
+  const [selCat, setSelCat] = useState(null);
+  const catKeys = Object.keys(cats);
+  const [form, setForm] = useState({ nameCN:"", nameEN:"", category:catKeys[0]||allCategories[0], location:"", price:"", description:"" });
+  const [ok, setOk] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+
+  function setCats(fn) {
+    setCatsRaw(prev => {
+      const next = typeof fn==="function" ? fn(prev) : fn;
+      localStorage.setItem(CAT_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function handleAddCat() {
+    if(!catForm.key.trim()) return;
+    setCats(p => ({ ...p, [catForm.key]: { bg:catForm.bg, light:catForm.light, accent:catForm.accent, icon:catForm.icon, en:catForm.key } }));
+    setCatForm({ key:"", icon:"💊", bg:"#F0F4FF", light:"#DBEAFE", accent:"#1565C0" });
+    setCatOk(true); setTimeout(()=>setCatOk(false), 2500);
+  }
+
+  function handleDeleteCat(key) {
+    if(medicines.some(m=>m.category===key)) {
+      alert("Cannot delete: medicines exist in this category!\n该分类下还有药品，无法删除！");
+      return;
+    }
+    setCats(p => { const n={...p}; delete n[key]; return n; });
+    if(selCat===key) setSelCat(null);
+  }
+
+  function setMed(fn) {
+    setMedRaw(prev => {
+      const next = typeof fn==="function" ? fn(prev) : fn;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  const filtered = useMemo(() => medicines.filter(m => {
+    const q = search.toLowerCase();
+    const hit = m.nameCN.includes(search)||m.nameEN.toLowerCase().includes(q)||
+      m.category.toLowerCase().includes(q)||m.description.toLowerCase().includes(q)||
+      m.location.toLowerCase().includes(q);
+    const cat = filterCat==="全部 All"||m.category===filterCat;
+    return hit && cat;
+  }), [medicines, search, filterCat]);
+
+  const locs = useMemo(() => {
+    const map = {};
+    medicines.forEach(m => { if(!map[m.location]) map[m.location]=[]; map[m.location].push(m); });
+    return map;
+  }, [medicines]);
+
+  function handleAdd() {
+    if(!form.nameCN||!form.nameEN||!form.location||!form.price) return;
+    setMed(p => [...p, {...form, id:Date.now()}]);
+    setForm({ nameCN:"", nameEN:"", category:allCategories[0], location:"", price:"", description:"" });
+    setOk(true); setTimeout(()=>setOk(false), 2500);
+  }
+
+  function startEdit(m) { setEditId(m.id); setEditForm({...m}); }
+  function saveEdit() {
+    setMed(p => p.map(m => m.id===editId ? {...editForm} : m));
+    setEditId(null); setEditForm(null);
+  }
+
+  const BLUE = "#0055A4";
+  const BLUE2 = "#003F7F";
+  const TEAL = "#00897B";
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#EEF2F7" }}>
+
+      {/* TOP HEADER */}
+      <div style={{
+        background:`linear-gradient(135deg, ${BLUE2} 0%, ${BLUE} 60%, #0077CC 100%)`,
+        color:"#fff", padding:"0", boxShadow:"0 4px 20px #0003",
+        position:"sticky", top:0, zIndex:100,
+      }}>
+        <div style={{ maxWidth:900, margin:"0 auto", padding:"0 20px" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 0 10px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+              <div style={{
+                width:44, height:44, background:"rgba(255,255,255,0.15)",
+                borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:24, border:"2px solid rgba(255,255,255,0.25)",
+              }}>💊</div>
+              <div>
+                <div style={{ fontFamily:"'Playfair Display', serif", fontSize:20, fontWeight:700, letterSpacing:0.5 }}>
+                  MegaCare Pharmacy
+                </div>
+                <div style={{ fontSize:11, opacity:0.65, letterSpacing:1.5, marginTop:1 }}>
+                  INVENTORY MANAGEMENT SYSTEM
+                </div>
+              </div>
+            </div>
+            <div style={{ textAlign:"right", fontSize:12, opacity:0.7 }}>
+              <div style={{ fontWeight:600, fontSize:15, opacity:1 }}>{medicines.length}</div>
+              <div>Products</div>
+            </div>
+          </div>
+
+          {/* NAV TABS */}
+          <div style={{ display:"flex", gap:4, paddingBottom:0 }}>
+            {[
+              {key:"search",     icon:"🔍", label:"Search / 搜索"},
+              {key:"map",        icon:"🗺️", label:"Location / 位置"},
+              {key:"categories", icon:"📋", label:"Categories / 分类"},
+              {key:"add",        icon:"➕", label:"Add / 添加"},
+            ].map(t => (
+              <button key={t.key} onClick={()=>setTab(t.key)} style={{
+                padding:"10px 18px", background: tab===t.key ? "rgba(255,255,255,0.2)" : "transparent",
+                border:"none", borderBottom: tab===t.key ? "3px solid #fff" : "3px solid transparent",
+                color:"#fff", cursor:"pointer", fontSize:13, fontWeight: tab===t.key ? 600 : 400,
+                borderRadius:"8px 8px 0 0", opacity: tab===t.key ? 1 : 0.65,
+                transition:"all 0.2s",
+              }}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth:900, margin:"0 auto", padding:"20px 16px 60px" }}>
+
+        {/* ── SEARCH TAB ── */}
+        {tab==="search" && (
+          <div>
+            {/* Search bar */}
+            <div style={{ background:"#fff", borderRadius:14, padding:16, marginBottom:16, boxShadow:"0 2px 10px #0001" }}>
+              <div style={{ position:"relative" }}>
+                <span style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", fontSize:16, opacity:0.4 }}>🔍</span>
+                <input value={search} onChange={e=>setSearch(e.target.value)}
+                  placeholder="Search by name, symptom, location... / 搜索药名、症状、位置..."
+                  style={{
+                    width:"100%", padding:"12px 14px 12px 42px",
+                    borderRadius:10, border:"1.5px solid #D1DCE8",
+                    fontSize:14, background:"#F8FAFC",
+                  }}
+                />
+              </div>
+              {/* Category pills */}
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:12 }}>
+                {["全部 All", ...Object.keys(cats)].map(cat => {
+                  const cfg = cats[cat];
+                  const active = filterCat===cat;
+                  return (
+                    <button key={cat} onClick={()=>setFilterCat(cat)} style={{
+                      padding:"5px 14px", borderRadius:20,
+                      border: active ? `2px solid ${BLUE}` : "2px solid #D1DCE8",
+                      background: active ? BLUE : "#F8FAFC",
+                      color: active ? "#fff" : "#555",
+                      fontSize:12, cursor:"pointer", fontWeight: active ? 600 : 400,
+                      transition:"all 0.15s",
+                    }}>
+                      {cfg ? cfg.icon+" " : "🔷 "}{cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Results count */}
+            <div style={{ fontSize:12, color:"#6B7A8D", marginBottom:10, paddingLeft:4 }}>
+              {filtered.length} result{filtered.length!==1?"s":""} found
+            </div>
+
+            {filtered.length===0 ? (
+              <div style={{ background:"#fff", borderRadius:14, padding:"40px 20px", textAlign:"center", color:"#aaa" }}>
+                <div style={{ fontSize:36, marginBottom:10 }}>🔍</div>
+                <div style={{ fontSize:15 }}>No medicines found</div>
+                <div style={{ fontSize:12, marginTop:4 }}>找不到相关药品</div>
+              </div>
+            ) : (
+              <div style={{ display:"grid", gap:10 }}>
+                {filtered.map(m => {
+                  const cfg = cats[m.category] || { bg:"#f9f9f9", accent:"#666", icon:"💊", light:"#eee" };
+                  const isEdit = editId===m.id;
+                  return (
+                    <div key={m.id} style={{
+                      background:"#fff", borderRadius:14, overflow:"hidden",
+                      boxShadow:"0 2px 12px #00000010",
+                      border:`1px solid ${cfg.light}`,
+                    }}>
+                      {isEdit ? (
+                        <div style={{ padding:16 }}>
+                          <div style={{ fontWeight:600, color:BLUE, marginBottom:10 }}>✏️ Edit Medicine</div>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                            {[
+                              {k:"nameCN",l:"中文名"},{k:"nameEN",l:"English Name"},
+                              {k:"location",l:"Location"},{k:"price",l:"Price"},
+                            ].map(f=>(
+                              <div key={f.k}>
+                                <div style={{ fontSize:11, color:"#888", marginBottom:3 }}>{f.l}</div>
+                                <input value={editForm[f.k]} onChange={e=>setEditForm(p=>({...p,[f.k]:e.target.value}))}
+                                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13 }}/>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ marginTop:8 }}>
+                            <div style={{ fontSize:11, color:"#888", marginBottom:3 }}>Category</div>
+                            <select value={editForm.category} onChange={e=>setEditForm(p=>({...p,category:e.target.value}))}
+                              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13, background:"#fff" }}>
+                              {allCategories.map(c=><option key={c} value={c}>{categoryConfig[c]?.icon} {c}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ marginTop:8 }}>
+                            <div style={{ fontSize:11, color:"#888", marginBottom:3 }}>Description / 功能</div>
+                            <input value={editForm.description} onChange={e=>setEditForm(p=>({...p,description:e.target.value}))}
+                              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13 }}/>
+                          </div>
+                          <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                            <button onClick={saveEdit} style={{ flex:1, padding:"9px", background:BLUE, color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontWeight:600, fontSize:13 }}>
+                              💾 Save
+                            </button>
+                            <button onClick={()=>{setEditId(null);setEditForm(null);}} style={{ flex:1, padding:"9px", background:"#F0F4F8", color:"#555", border:"none", borderRadius:8, cursor:"pointer", fontSize:13 }}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display:"flex", alignItems:"stretch" }}>
+                          <div style={{ width:5, background:cfg.accent, flexShrink:0 }}/>
+                          <div style={{ padding:"12px 14px", flex:1 }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                              <div>
+                                <span style={{ fontSize:15, fontWeight:700, color:"#1A2B3C" }}>{m.nameCN}</span>
+                                <span style={{ fontSize:13, color:"#7A8899", marginLeft:8 }}>{m.nameEN}</span>
+                              </div>
+                              <span style={{ fontSize:14, fontWeight:700, color:cfg.accent, whiteSpace:"nowrap", marginLeft:8 }}>{m.price}</span>
+                            </div>
+                            <div style={{ display:"flex", gap:6, marginTop:7, flexWrap:"wrap" }}>
+                              <span style={{ background:cfg.bg, color:cfg.accent, border:`1px solid ${cfg.light}`, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:600 }}>
+                                {cfg.icon} {m.category}
+                              </span>
+                              <span style={{ background:"#EEF5FF", color:BLUE, border:"1px solid #C8DCFF", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:600 }}>
+                                📍 {m.location}
+                              </span>
+                            </div>
+                            <div style={{ fontSize:12, color:"#7A8899", marginTop:6 }}>{m.description}</div>
+                          </div>
+                          <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #F0F4F8" }}>
+                            <button onClick={()=>startEdit(m)} style={{ flex:1, background:"#EEF5FF", border:"none", color:BLUE, padding:"0 12px", cursor:"pointer", fontSize:14, borderBottom:"1px solid #F0F4F8" }}>✏️</button>
+                            <button onClick={()=>setMed(p=>p.filter(x=>x.id!==m.id))} style={{ flex:1, background:"#FFF0F0", border:"none", color:"#C62828", padding:"0 12px", cursor:"pointer", fontSize:14 }}>🗑️</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MAP TAB ── */}
+        {tab==="map" && (
+          <div>
+            <div style={{ background:"#fff", borderRadius:14, padding:16, marginBottom:16, boxShadow:"0 2px 10px #0001" }}>
+              <div style={{ fontWeight:600, color:BLUE, fontSize:15, marginBottom:4 }}>🗺️ Store Location Map</div>
+              <div style={{ fontSize:13, color:"#7A8899" }}>Tap a shelf to see its medicines / 点击货架查看药品</div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px, 1fr))", gap:12, marginBottom:20 }}>
+              {Object.keys(locs).sort().map(loc => {
+                const meds = locs[loc];
+                const locCats = [...new Set(meds.map(m=>m.category))];
+                const isSel = selLoc===loc;
+                return (
+                  <button key={loc} onClick={()=>setSelLoc(isSel?null:loc)} style={{
+                    background: isSel ? BLUE : "#fff",
+                    border:`2px solid ${isSel ? BLUE : "#D1DCE8"}`,
+                    borderRadius:14, padding:"16px 10px", cursor:"pointer",
+                    textAlign:"center", boxShadow: isSel ? `0 4px 16px ${BLUE}44` : "0 2px 8px #0001",
+                    transition:"all 0.2s",
+                  }}>
+                    <div style={{ fontSize:28, marginBottom:6 }}>🗄️</div>
+                    <div style={{ fontSize:18, fontWeight:700, color: isSel?"#fff":BLUE }}>{loc}</div>
+                    <div style={{ fontSize:11, color: isSel?"rgba(255,255,255,0.7)":"#7A8899", marginTop:3 }}>
+                      {meds.length} item{meds.length!==1?"s":""}
+                    </div>
+                    <div style={{ fontSize:16, marginTop:6 }}>
+                      {locCats.slice(0,3).map(c=>cats[c]?.icon||"💊").join(" ")}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selLoc && (
+              <div style={{ background:"#fff", borderRadius:14, overflow:"hidden", boxShadow:"0 4px 20px #0002" }}>
+                <div style={{ background:`linear-gradient(90deg, ${BLUE2}, ${BLUE})`, color:"#fff", padding:"14px 18px" }}>
+                  <div style={{ fontWeight:700, fontSize:15 }}>📍 Shelf {selLoc}</div>
+                  <div style={{ fontSize:12, opacity:0.7, marginTop:2 }}>{locs[selLoc].length} medicines stored here</div>
+                </div>
+                {locs[selLoc].map((m,i) => {
+                  const cfg = cats[m.category]||{bg:"#f9f9f9",accent:"#666",icon:"💊",light:"#eee"};
+                  return (
+                    <div key={m.id} style={{
+                      padding:"14px 18px", borderBottom: i<locs[selLoc].length-1?"1px solid #F0F4F8":"none",
+                      display:"flex", justifyContent:"space-between", alignItems:"center",
+                      background: i%2===0 ? "#fff" : "#FAFBFD",
+                    }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontSize:18 }}>{cfg.icon}</span>
+                          <span style={{ fontWeight:600, fontSize:14, color:"#1A2B3C" }}>{m.nameCN}</span>
+                          <span style={{ fontSize:12, color:"#7A8899" }}>{m.nameEN}</span>
+                        </div>
+                        <div style={{ fontSize:12, color:"#7A8899", marginTop:4, marginLeft:26 }}>{m.description}</div>
+                      </div>
+                      <div style={{ fontWeight:700, color:cfg.accent, fontSize:14, marginLeft:12, whiteSpace:"nowrap" }}>{m.price}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── CATEGORIES TAB ── */}
+        {tab==="categories" && (
+          <div>
+            {/* Add new category form */}
+            <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 20px #0002", marginBottom:20 }}>
+              <div style={{ background:`linear-gradient(90deg, ${BLUE2}, ${BLUE})`, color:"#fff", padding:"14px 18px" }}>
+                <div style={{ fontWeight:700, fontSize:15 }}>➕ Add New Category / 添加新分类</div>
+              </div>
+              <div style={{ padding:18 }}>
+                {catOk && (
+                  <div style={{ background:"#E8F5E9", border:"1.5px solid #A5D6A7", color:"#1B5E20", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, fontWeight:600 }}>
+                    ✅ Category added! / 分类添加成功！
+                  </div>
+                )}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+                  <div>
+                    <label style={{ fontSize:12, color:"#6B7A8D", fontWeight:600, display:"block", marginBottom:4 }}>分类名 Category Name</label>
+                    <input value={catForm.key} onChange={e=>setCatForm(p=>({...p,key:e.target.value}))}
+                      placeholder="e.g. 止痛药 Painkiller"
+                      style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13, background:"#F8FAFC" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, color:"#6B7A8D", fontWeight:600, display:"block", marginBottom:4 }}>图标 Icon (emoji)</label>
+                    <input value={catForm.icon} onChange={e=>setCatForm(p=>({...p,icon:e.target.value}))}
+                      placeholder="e.g. 💊"
+                      style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:18, background:"#F8FAFC", textAlign:"center" }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:14 }}>
+                  {[
+                    {k:"accent", l:"主色 Accent Color"},
+                    {k:"bg", l:"背景色 Background"},
+                    {k:"light", l:"边框色 Border"},
+                  ].map(f=>(
+                    <div key={f.k}>
+                      <label style={{ fontSize:11, color:"#6B7A8D", fontWeight:600, display:"block", marginBottom:4 }}>{f.l}</label>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <input type="color" value={catForm[f.k]} onChange={e=>setCatForm(p=>({...p,[f.k]:e.target.value}))}
+                          style={{ width:36, height:36, border:"1.5px solid #D1DCE8", borderRadius:8, cursor:"pointer", padding:2 }}
+                        />
+                        <span style={{ fontSize:11, color:"#7A8899" }}>{catForm[f.k]}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Preview */}
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:11, color:"#6B7A8D", fontWeight:600, marginBottom:6 }}>预览 Preview:</div>
+                  <span style={{ background:catForm.bg, color:catForm.accent, border:`1px solid ${catForm.light}`, borderRadius:20, padding:"4px 14px", fontSize:13, fontWeight:600 }}>
+                    {catForm.icon} {catForm.key||"Category Name"}
+                  </span>
+                </div>
+                <button onClick={handleAddCat} style={{
+                  width:"100%", padding:"11px", borderRadius:10, border:"none",
+                  background:`linear-gradient(90deg, ${BLUE2}, ${BLUE})`,
+                  color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer",
+                }}>
+                  ➕ Add Category / 确认添加
+                </button>
+              </div>
+            </div>
+
+            {/* All categories list */}
+            <div style={{ fontWeight:600, color:"#1A2B3C", fontSize:14, marginBottom:10, paddingLeft:2 }}>
+              📋 All Categories / 所有分类 ({Object.keys(cats).length})
+            </div>
+            <div style={{ display:"grid", gap:10 }}>
+              {Object.keys(cats).map(key => {
+                const cfg = cats[key];
+                const count = medicines.filter(m=>m.category===key).length;
+                const isSel = selCat===key;
+                return (
+                  <div key={key} style={{ background:"#fff", borderRadius:14, overflow:"hidden", boxShadow:"0 2px 10px #0001", border:`1px solid ${cfg.light}` }}>
+                    <div style={{ display:"flex", alignItems:"stretch" }}>
+                      <div style={{ width:6, background:cfg.accent, flexShrink:0 }}/>
+                      <div style={{ padding:"14px 16px", flex:1, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                          <div style={{ width:42, height:42, background:cfg.bg, border:`2px solid ${cfg.light}`, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>
+                            {cfg.icon}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight:700, fontSize:14, color:"#1A2B3C" }}>{key}</div>
+                            <div style={{ fontSize:12, color:"#7A8899", marginTop:2 }}>{count} medicine{count!==1?"s":""} in this category</div>
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                          <button onClick={()=>setSelCat(isSel?null:key)} style={{
+                            padding:"6px 12px", borderRadius:8, border:`1.5px solid ${cfg.accent}`,
+                            background: isSel ? cfg.accent : "#fff", color: isSel ? "#fff" : cfg.accent,
+                            fontSize:12, cursor:"pointer", fontWeight:600,
+                          }}>
+                            {isSel ? "▲ Hide" : "▼ View"}
+                          </button>
+                          <button onClick={()=>handleDeleteCat(key)} style={{
+                            padding:"6px 10px", borderRadius:8, border:"1.5px solid #FECACA",
+                            background:"#FFF0F0", color:"#C62828", fontSize:12, cursor:"pointer",
+                          }}>🗑️</button>
+                        </div>
+                      </div>
+                    </div>
+                    {isSel && (
+                      <div style={{ borderTop:`1px solid ${cfg.light}`, background:cfg.bg }}>
+                        {medicines.filter(m=>m.category===key).length===0 ? (
+                          <div style={{ padding:"14px 18px", fontSize:13, color:"#7A8899", fontStyle:"italic" }}>No medicines in this category yet.</div>
+                        ) : medicines.filter(m=>m.category===key).map((m,i,arr)=>(
+                          <div key={m.id} style={{ padding:"10px 18px", borderBottom:i<arr.length-1?`1px solid ${cfg.light}`:"none", display:"flex", justifyContent:"space-between" }}>
+                            <div>
+                              <span style={{ fontWeight:600, fontSize:13, color:"#1A2B3C" }}>{m.nameCN}</span>
+                              <span style={{ fontSize:12, color:"#7A8899", marginLeft:8 }}>{m.nameEN}</span>
+                              <span style={{ fontSize:11, color:"#7A8899", marginLeft:8 }}>📍 {m.location}</span>
+                            </div>
+                            <span style={{ fontWeight:700, color:cfg.accent, fontSize:13 }}>{m.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── ADD TAB ── */}
+        {tab==="add" && (
+          <div style={{ maxWidth:560, margin:"0 auto" }}>
+            <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 20px #0002" }}>
+              <div style={{ background:`linear-gradient(90deg, ${BLUE2}, ${BLUE})`, color:"#fff", padding:"18px 22px" }}>
+                <div style={{ fontWeight:700, fontSize:16 }}>➕ Add New Medicine</div>
+                <div style={{ fontSize:12, opacity:0.7, marginTop:2 }}>添加新药品到系统</div>
+              </div>
+              <div style={{ padding:22 }}>
+                {ok && (
+                  <div style={{ background:"#E8F5E9", border:"1.5px solid #A5D6A7", color:"#1B5E20", borderRadius:10, padding:"12px 16px", marginBottom:16, fontSize:13, fontWeight:600 }}>
+                    ✅ Medicine added successfully! / 添加成功！
+                  </div>
+                )}
+
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:14 }}>
+                  {[
+                    {k:"nameCN", l:"中文药名", p:"例：扑热息痛"},
+                    {k:"nameEN", l:"English Name", p:"e.g. Panadol"},
+                    {k:"location", l:"位置 Location", p:"e.g. A1, B2"},
+                    {k:"price", l:"价格 Price", p:"e.g. RM 5.00"},
+                  ].map(f=>(
+                    <div key={f.k}>
+                      <label style={{ fontSize:12, color:"#6B7A8D", fontWeight:600, display:"block", marginBottom:5 }}>{f.l}</label>
+                      <input value={form[f.k]} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))}
+                        placeholder={f.p}
+                        style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13, background:"#F8FAFC" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ fontSize:12, color:"#6B7A8D", fontWeight:600, display:"block", marginBottom:5 }}>分类 Category</label>
+                  <select value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}
+                    style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13, background:"#F8FAFC" }}>
+                    {Object.keys(cats).map(c=><option key={c} value={c}>{cats[c]?.icon} {c}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom:20 }}>
+                  <label style={{ fontSize:12, color:"#6B7A8D", fontWeight:600, display:"block", marginBottom:5 }}>功能描述 Description</label>
+                  <input value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}
+                    placeholder="e.g. 退烧止痛 / Fever & Pain Relief"
+                    style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #D1DCE8", fontSize:13, background:"#F8FAFC" }}
+                  />
+                </div>
+
+                <button onClick={handleAdd} style={{
+                  width:"100%", padding:"13px", borderRadius:10, border:"none",
+                  background:`linear-gradient(90deg, ${BLUE2}, ${BLUE})`,
+                  color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer",
+                  boxShadow:`0 4px 14px ${BLUE}55`, letterSpacing:0.5,
+                  transition:"opacity 0.2s",
+                }}>
+                  ➕ Confirm Add / 确认添加
+                </button>
+              </div>
+            </div>
+
+            {/* Summary cards */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:16 }}>
+              {[
+                { label:"Total Products", value:medicines.length, icon:"💊", color:BLUE },
+                { label:"Locations", value:Object.keys(locs).length, icon:"🗄️", color:TEAL },
+                { label:"Categories", value:allCategories.length, icon:"📋", color:"#7B1FA2" },
+              ].map(s=>(
+                <div key={s.label} style={{ background:"#fff", borderRadius:12, padding:"14px 10px", textAlign:"center", boxShadow:"0 2px 8px #0001" }}>
+                  <div style={{ fontSize:22 }}>{s.icon}</div>
+                  <div style={{ fontSize:22, fontWeight:700, color:s.color, marginTop:4 }}>{s.value}</div>
+                  <div style={{ fontSize:10, color:"#7A8899", marginTop:2 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* FOOTER */}
+      <div style={{ textAlign:"center", padding:"16px", fontSize:11, color:"#A0ADB8", borderTop:"1px solid #E2E8F0", background:"#fff" }}>
+        © 2025 MegaCare Pharmacy · Inventory Management System · All data stored locally
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
